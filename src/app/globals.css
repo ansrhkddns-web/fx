@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #308ce8;
+  --color-background-light: #f6f7f8;
+  --color-background-dark: #111921;
+  --color-surface-dark: #1a242f;
+  --color-surface-border: #2a3645;
+  --color-border-dark: #2a3645;
+  --color-text-secondary: #9dabb8;
+  --font-display: var(--font-manrope), sans-serif;
+  --font-body: var(--font-manrope), sans-serif;
+}
+
+:root {
+  --background: #f6f7f8;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111921;
+    --foreground: #f8fafc;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Custom scrollbar for a more software-like feel */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #111418;
+}
+::-webkit-scrollbar-thumb {
+    background: #293038;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #3e4854;
+}
+
+/* Grid background pattern for the canvas */
+.bg-grid-pattern {
+    background-size: 40px 40px;
+    background-image:
+        linear-gradient(to right, #293038 1px, transparent 1px),
+        linear-gradient(to bottom, #293038 1px, transparent 1px);
+}
