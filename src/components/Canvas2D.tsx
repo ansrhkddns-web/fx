@@ -70,6 +70,14 @@ export default function Canvas2D() {
         setIsClosePreview(false);
     }, []);
 
+    const clearSelection = useCallback((clearEditMode: boolean = true) => {
+        if (clearEditMode) {
+            setEditingShapeId(null);
+        }
+        setSelectedShapeId(null);
+        setSelectedVertexId(null);
+    }, [setSelectedShapeId, setSelectedVertexId]);
+
     const isSelectTool = activeTool === 'select';
     const isEditTool = activeTool === 'cut';
     const canInspectShapes = isSelectTool || isEditTool;
@@ -106,15 +114,14 @@ export default function Canvas2D() {
 
     useEffect(() => {
         if (selectedShapeId && !shapes.some((shape) => shape.id === selectedShapeId)) {
-            setSelectedShapeId(null);
-            setSelectedVertexId(null);
+            clearSelection(false);
         }
 
         if (editingShapeId && !shapes.some((shape) => shape.id === editingShapeId)) {
             setEditingShapeId(null);
             setSelectedVertexId(null);
         }
-    }, [shapes, selectedShapeId, editingShapeId, setSelectedShapeId, setSelectedVertexId]);
+    }, [shapes, selectedShapeId, editingShapeId, clearSelection, setSelectedVertexId]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -134,13 +141,12 @@ export default function Canvas2D() {
                 return;
             }
 
-            setSelectedShapeId(null);
-            setSelectedVertexId(null);
+            clearSelection();
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [activeTool, clearDrawingPoints, editingShapeId, setSelectedShapeId, setSelectedVertexId]);
+    }, [activeTool, clearDrawingPoints, editingShapeId, clearSelection]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -194,14 +200,13 @@ export default function Canvas2D() {
 
             deleteShape(selectedShapeId);
             setEditingShapeId(null);
-            setSelectedShapeId(null);
-            setSelectedVertexId(null);
+            clearSelection();
             event.preventDefault();
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [canInspectShapes, selectedShapeId, deleteShape, setSelectedShapeId, setSelectedVertexId]);
+    }, [canInspectShapes, selectedShapeId, deleteShape, clearSelection]);
 
     // Initialize Canvas
     useEffect(() => {
@@ -335,14 +340,12 @@ export default function Canvas2D() {
             canvas.on('mouse:down', (e) => {
                 if (!e.target) {
                     dragStartRef.current = {};
-                    setEditingShapeId(null);
-                    setSelectedShapeId(null);
-                    setSelectedVertexId(null);
+                    clearSelection();
                 }
             });
         }
 
-    }, [activeTool, isSelectTool, isEditTool, canInspectShapes, addShape, closeDrawingShape, pushDrawingPoint, setSelectedShapeId, setSelectedVertexId]);
+    }, [activeTool, isSelectTool, isEditTool, canInspectShapes, addShape, closeDrawingShape, pushDrawingPoint, clearSelection, setSelectedShapeId, setSelectedVertexId]);
 
     // Render shapes from state + drawing preview
     useEffect(() => {
