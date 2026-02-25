@@ -101,10 +101,9 @@ export default function Canvas2D() {
 
     useEffect(() => {
         if (!canInspectShapes) {
-            setEditingShapeId(null);
-            setSelectedVertexId(null);
+            clearSelection();
         }
-    }, [canInspectShapes, setSelectedVertexId]);
+    }, [canInspectShapes, clearSelection]);
 
     useEffect(() => {
         if (activeTool !== 'pen' && drawingPointsRef.current.length > 0) {
@@ -125,56 +124,11 @@ export default function Canvas2D() {
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key !== 'Escape') return;
-
             if (isTypingTarget(event.target)) return;
 
-            if (activeTool === 'pen' && drawingPointsRef.current.length > 0) {
-                clearDrawingPoints();
-                event.preventDefault();
-                return;
-            }
-
-            if (editingShapeId) {
-                setEditingShapeId(null);
-                setSelectedVertexId(null);
-                return;
-            }
-
-            clearSelection();
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [activeTool, clearDrawingPoints, editingShapeId, clearSelection]);
-
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (isTypingTarget(event.target)) return;
-
-            if (activeTool === 'pen' && event.key === 'Enter') {
-                if (closeDrawingShape()) {
-                    event.preventDefault();
-                }
-                return;
-            }
-
-            if (activeTool === 'pen' && event.key === 'Backspace' && drawingPointsRef.current.length > 0) {
-                popDrawingPoint();
-                event.preventDefault();
-            }
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [activeTool, closeDrawingShape, popDrawingPoint]);
-
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (isTypingTarget(event.target)) return;
-
-            const isUndo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
-            const isRedo = (event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey));
+            const key = event.key;
+            const isUndo = (event.ctrlKey || event.metaKey) && key.toLowerCase() === 'z' && !event.shiftKey;
+            const isRedo = (event.ctrlKey || event.metaKey) && (key.toLowerCase() === 'y' || (key.toLowerCase() === 'z' && event.shiftKey));
 
             if (isUndo) {
                 undo();
@@ -185,28 +139,62 @@ export default function Canvas2D() {
             if (isRedo) {
                 redo();
                 event.preventDefault();
+                return;
+            }
+
+            if (key === 'Escape') {
+                if (activeTool === 'pen' && drawingPointsRef.current.length > 0) {
+                    clearDrawingPoints();
+                    event.preventDefault();
+                    return;
+                }
+
+                if (editingShapeId) {
+                    setEditingShapeId(null);
+                    setSelectedVertexId(null);
+                    return;
+                }
+
+                clearSelection();
+                return;
+            }
+
+            if (activeTool === 'pen' && key === 'Enter') {
+                if (closeDrawingShape()) {
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            if (activeTool === 'pen' && key === 'Backspace' && drawingPointsRef.current.length > 0) {
+                popDrawingPoint();
+                event.preventDefault();
+                return;
+            }
+
+            if ((key === 'Delete' || key === 'Backspace') && canInspectShapes && selectedShapeId) {
+                deleteShape(selectedShapeId);
+                clearSelection();
+                event.preventDefault();
             }
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [undo, redo]);
-
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (isTypingTarget(event.target)) return;
-            if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-            if (!canInspectShapes || !selectedShapeId) return;
-
-            deleteShape(selectedShapeId);
-            setEditingShapeId(null);
-            clearSelection();
-            event.preventDefault();
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [canInspectShapes, selectedShapeId, deleteShape, clearSelection]);
+    }, [
+        activeTool,
+        canInspectShapes,
+        clearDrawingPoints,
+        clearSelection,
+        closeDrawingShape,
+        deleteShape,
+        editingShapeId,
+        popDrawingPoint,
+        redo,
+        selectedShapeId,
+        setSelectedVertexId,
+        undo,
+    ]);
 
     // Initialize Canvas
     useEffect(() => {
