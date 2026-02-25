@@ -99,6 +99,24 @@ export default function Canvas2D() {
     }, [canInspectShapes, setSelectedVertexId]);
 
     useEffect(() => {
+        if (activeTool !== 'pen' && drawingPointsRef.current.length > 0) {
+            clearDrawingPoints();
+        }
+    }, [activeTool, clearDrawingPoints]);
+
+    useEffect(() => {
+        if (selectedShapeId && !shapes.some((shape) => shape.id === selectedShapeId)) {
+            setSelectedShapeId(null);
+            setSelectedVertexId(null);
+        }
+
+        if (editingShapeId && !shapes.some((shape) => shape.id === editingShapeId)) {
+            setEditingShapeId(null);
+            setSelectedVertexId(null);
+        }
+    }, [shapes, selectedShapeId, editingShapeId, setSelectedShapeId, setSelectedVertexId]);
+
+    useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape') return;
 
@@ -110,13 +128,19 @@ export default function Canvas2D() {
                 return;
             }
 
-            setEditingShapeId(null);
+            if (editingShapeId) {
+                setEditingShapeId(null);
+                setSelectedVertexId(null);
+                return;
+            }
+
+            setSelectedShapeId(null);
             setSelectedVertexId(null);
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [activeTool, clearDrawingPoints, setSelectedVertexId]);
+    }, [activeTool, clearDrawingPoints, editingShapeId, setSelectedShapeId, setSelectedVertexId]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -267,6 +291,8 @@ export default function Canvas2D() {
 
         } else if (canInspectShapes) {
             canvas.on('object:modified', (e) => {
+                if (!isSelectTool) return;
+
                 const obj = e.target as fabric.Polygon & { shapeId?: string };
                 const shapeId = obj?.shapeId;
                 if (!obj || obj.type !== 'polygon' || !shapeId) return;
@@ -511,7 +537,7 @@ export default function Canvas2D() {
     const modeHint = isEditTool
         ? 'Edit Pattern: click shape to edit vertices · Esc to exit'
         : isSelectTool
-            ? 'Select: drag shape · double-click edit · Ctrl/Cmd+Z undo · Delete remove'
+            ? 'Select: drag shape · double-click edit · Ctrl/Cmd+Z undo · Delete remove · Esc clear'
             : activeTool === 'pen'
                 ? 'Pen: click to add points · Enter close · Backspace undo · Esc cancel'
                 : null;
