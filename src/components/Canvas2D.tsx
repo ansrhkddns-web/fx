@@ -13,7 +13,7 @@ const snapToGrid = (val: number) => Math.round(val / GRID_SIZE) * GRID_SIZE;
 
 const isTypingTarget = (target: EventTarget | null) => {
     const element = target as HTMLElement | null;
-    return !!element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA');
+    return !!element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT' || element.isContentEditable);
 };
 
 type DragStartMap = Record<string, { x: number; y: number }>;
@@ -82,6 +82,18 @@ export default function Canvas2D() {
     const isEditTool = activeTool === 'cut';
     const canInspectShapes = isSelectTool || isEditTool;
 
+    const activeToolRef = useRef(activeTool);
+    const canInspectShapesRef = useRef(canInspectShapes);
+    const selectedShapeIdRef = useRef(selectedShapeId);
+    const editingShapeIdRef = useRef(editingShapeId);
+
+    useEffect(() => {
+        activeToolRef.current = activeTool;
+        canInspectShapesRef.current = canInspectShapes;
+        selectedShapeIdRef.current = selectedShapeId;
+        editingShapeIdRef.current = editingShapeId;
+    }, [activeTool, canInspectShapes, selectedShapeId, editingShapeId]);
+
     const closeDrawingShape = useCallback(() => {
         const points = drawingPointsRef.current;
         if (points.length < 3) return false;
@@ -127,6 +139,10 @@ export default function Canvas2D() {
             if (isTypingTarget(event.target)) return;
 
             const key = event.key;
+            const activeToolValue = activeToolRef.current;
+            const editingShapeIdValue = editingShapeIdRef.current;
+            const selectedShapeIdValue = selectedShapeIdRef.current;
+            const canInspectShapesValue = canInspectShapesRef.current;
             const isUndo = (event.ctrlKey || event.metaKey) && key.toLowerCase() === 'z' && !event.shiftKey;
             const isRedo = (event.ctrlKey || event.metaKey) && (key.toLowerCase() === 'y' || (key.toLowerCase() === 'z' && event.shiftKey));
 
@@ -143,13 +159,13 @@ export default function Canvas2D() {
             }
 
             if (key === 'Escape') {
-                if (activeTool === 'pen' && drawingPointsRef.current.length > 0) {
+                if (activeToolValue === 'pen' && drawingPointsRef.current.length > 0) {
                     clearDrawingPoints();
                     event.preventDefault();
                     return;
                 }
 
-                if (editingShapeId) {
+                if (editingShapeIdValue) {
                     setEditingShapeId(null);
                     setSelectedVertexId(null);
                     return;
@@ -159,21 +175,21 @@ export default function Canvas2D() {
                 return;
             }
 
-            if (activeTool === 'pen' && key === 'Enter') {
+            if (activeToolValue === 'pen' && key === 'Enter') {
                 if (closeDrawingShape()) {
                     event.preventDefault();
                 }
                 return;
             }
 
-            if (activeTool === 'pen' && key === 'Backspace' && drawingPointsRef.current.length > 0) {
+            if (activeToolValue === 'pen' && key === 'Backspace' && drawingPointsRef.current.length > 0) {
                 popDrawingPoint();
                 event.preventDefault();
                 return;
             }
 
-            if ((key === 'Delete' || key === 'Backspace') && canInspectShapes && selectedShapeId) {
-                deleteShape(selectedShapeId);
+            if ((key === 'Delete' || key === 'Backspace') && canInspectShapesValue && selectedShapeIdValue) {
+                deleteShape(selectedShapeIdValue);
                 clearSelection();
                 event.preventDefault();
             }
@@ -182,16 +198,12 @@ export default function Canvas2D() {
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [
-        activeTool,
-        canInspectShapes,
         clearDrawingPoints,
         clearSelection,
         closeDrawingShape,
         deleteShape,
-        editingShapeId,
         popDrawingPoint,
         redo,
-        selectedShapeId,
         setSelectedVertexId,
         undo,
     ]);
