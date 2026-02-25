@@ -18,6 +18,31 @@ interface HistoryState {
   shapes: Shape[];
 }
 
+const cloneShapes = (shapes: Shape[]) => JSON.parse(JSON.stringify(shapes)) as Shape[];
+const MAX_HISTORY_ENTRIES = 200;
+
+const shapesAreEqual = (left: Shape[], right: Shape[]) => {
+  if (left.length !== right.length) return false;
+
+  return left.every((leftShape, shapeIndex) => {
+    const rightShape = right[shapeIndex];
+    if (!rightShape) return false;
+    if (leftShape.id !== rightShape.id) return false;
+    if (leftShape.type !== rightShape.type) return false;
+    if (leftShape.isClosed !== rightShape.isClosed) return false;
+    if (leftShape.color !== rightShape.color) return false;
+    if (leftShape.points.length !== rightShape.points.length) return false;
+
+    return leftShape.points.every((leftPoint, pointIndex) => {
+      const rightPoint = rightShape.points[pointIndex];
+      return !!rightPoint
+        && leftPoint.id === rightPoint.id
+        && leftPoint.x === rightPoint.x
+        && leftPoint.y === rightPoint.y;
+    });
+  });
+};
+
 interface GarmentState {
   viewMode: "2d" | "3d" | "split";
   activeTool: string;
@@ -88,8 +113,22 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
 
   saveHistory: () => {
     const state = get();
+    const snapshot = cloneShapes(state.shapes);
+    const lastSnapshot = state.history[state.historyIndex];
+
+    if (lastSnapshot && shapesAreEqual(lastSnapshot.shapes, snapshot)) {
+      return;
+    }
+
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ shapes: JSON.parse(JSON.stringify(state.shapes)) }); // Deep clone
+    newHistory.push({ shapes: snapshot });
+
+    if (newHistory.length > MAX_HISTORY_ENTRIES) {
+      const trimmedHistory = newHistory.slice(newHistory.length - MAX_HISTORY_ENTRIES);
+      set({ history: trimmedHistory, historyIndex: trimmedHistory.length - 1 });
+      return;
+    }
+
     set({ history: newHistory, historyIndex: newHistory.length - 1 });
   },
 
@@ -114,7 +153,7 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
     const { historyIndex, history } = get();
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
-      set({ shapes: JSON.parse(JSON.stringify(history[newIndex].shapes)), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
+      set({ shapes: cloneShapes(history[newIndex].shapes), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
     } else if (historyIndex === 0) {
       // Revert to empty
       set({ shapes: [], historyIndex: -1, selectedShapeId: null, selectedVertexId: null });
@@ -125,7 +164,7 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
     const { historyIndex, history } = get();
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
-      set({ shapes: JSON.parse(JSON.stringify(history[newIndex].shapes)), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
+      set({ shapes: cloneShapes(history[newIndex].shapes), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
     }
   }
 }));
