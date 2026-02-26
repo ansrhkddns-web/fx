@@ -18,6 +18,12 @@ interface HistoryState {
   shapes: Shape[];
 }
 
+export interface ProjectSnapshot {
+  shapes: Shape[];
+  history: HistoryState[];
+  historyIndex: number;
+}
+
 const cloneShapes = (shapes: Shape[]) => JSON.parse(JSON.stringify(shapes)) as Shape[];
 const MAX_HISTORY_ENTRIES = 200;
 
@@ -73,9 +79,12 @@ interface GarmentState {
   deleteShape: (id: string) => void;
   undo: () => void;
   redo: () => void;
+  clearProject: () => void;
+  loadProject: (project: ProjectSnapshot) => boolean;
 
   // Directly pushing to history
   saveHistory: () => void;
+  getProjectSnapshot: () => ProjectSnapshot;
 }
 
 export const useGarmentStore = create<GarmentState>((set, get) => ({
@@ -166,5 +175,52 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
       const newIndex = historyIndex + 1;
       set({ shapes: cloneShapes(history[newIndex].shapes), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
     }
+  },
+
+  clearProject: () => {
+    set({
+      shapes: [],
+      history: [],
+      historyIndex: -1,
+      selectedShapeId: null,
+      selectedVertexId: null,
+      activeTool: 'select',
+    });
+  },
+
+  loadProject: (project) => {
+    if (!project || !Array.isArray(project.shapes) || !Array.isArray(project.history) || typeof project.historyIndex !== 'number') {
+      return false;
+    }
+
+    const sanitizedShapes = cloneShapes(project.shapes);
+    const sanitizedHistory = project.history
+      .filter((entry) => entry && Array.isArray(entry.shapes))
+      .map((entry) => ({ shapes: cloneShapes(entry.shapes) }));
+
+    const boundedHistory = sanitizedHistory.slice(-MAX_HISTORY_ENTRIES);
+    const normalizedHistoryIndex = boundedHistory.length === 0
+      ? -1
+      : Math.min(Math.max(project.historyIndex, 0), boundedHistory.length - 1);
+
+    set({
+      shapes: sanitizedShapes,
+      history: boundedHistory,
+      historyIndex: normalizedHistoryIndex,
+      selectedShapeId: null,
+      selectedVertexId: null,
+      activeTool: 'select',
+    });
+
+    return true;
+  },
+
+  getProjectSnapshot: () => {
+    const { shapes, history, historyIndex } = get();
+    return {
+      shapes: cloneShapes(shapes),
+      history: history.map((entry) => ({ shapes: cloneShapes(entry.shapes) })),
+      historyIndex,
+    };
   }
 }));
