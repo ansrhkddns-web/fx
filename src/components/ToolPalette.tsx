@@ -1,29 +1,41 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGarmentStore } from '@/store/useGarmentStore';
 
 export default function ToolPalette() {
     const { activeTool, setActiveTool, undo, redo } = useGarmentStore();
     const [statusMessage, setStatusMessage] = useState('');
+    const statusTimeoutRef = useRef<number | null>(null);
 
     const setStatus = (message: string) => {
         setStatusMessage(message);
-        window.setTimeout(() => setStatusMessage(''), 2000);
+        if (statusTimeoutRef.current !== null) {
+            window.clearTimeout(statusTimeoutRef.current);
+        }
+        statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 2000);
     };
 
+    useEffect(() => {
+        return () => {
+            if (statusTimeoutRef.current !== null) {
+                window.clearTimeout(statusTimeoutRef.current);
+            }
+        };
+    }, []);
+
     const tools = [
-        { id: 'select', icon: 'ads_click', label: 'Select Tool (V)', available: true },
-        { id: 'pen', icon: 'edit', label: 'Pen Tool', available: true },
-        { id: 'polygon', icon: 'hexagon', label: 'Polygon', available: true, fallbackTool: 'pen' },
-        { id: 'curve', icon: 'gesture', label: 'Curve', available: true, fallbackTool: 'pen' },
+        { id: 'select', icon: 'ads_click', label: 'Select Tool (V)' },
+        { id: 'pen', icon: 'edit', label: 'Pen Tool' },
+        { id: 'polygon', icon: 'hexagon', label: 'Polygon', fallbackTool: 'pen' },
+        { id: 'curve', icon: 'gesture', label: 'Curve', fallbackTool: 'pen' },
     ];
 
     const editTools = [
-        { id: 'cut', icon: 'content_cut', label: 'Edit Pattern', available: true },
-        { id: 'measure', icon: 'straighten', label: 'Internal Line', available: true, fallbackTool: 'cut' },
-        { id: 'seam', icon: 'border_style', label: 'Seam Allowance', available: true, fallbackTool: 'cut' },
-        { id: 'text', icon: 'title', label: 'Text', available: true, fallbackTool: 'cut' },
+        { id: 'cut', icon: 'content_cut', label: 'Edit Pattern' },
+        { id: 'measure', icon: 'straighten', label: 'Internal Line', fallbackTool: 'cut' },
+        { id: 'seam', icon: 'border_style', label: 'Seam Allowance', fallbackTool: 'cut' },
+        { id: 'text', icon: 'title', label: 'Text', fallbackTool: 'cut' },
     ];
 
     const handleToolClick = (toolId: string, label: string, fallbackTool?: string) => {

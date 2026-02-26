@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarmentStore } from '@/store/useGarmentStore';
 
 const FABRIC_OPTIONS = [
@@ -19,6 +19,7 @@ export default function PropertiesPanel() {
     const [grainline, setGrainline] = useState(0);
     const [seamStyle, setSeamStyle] = useState<typeof SEAM_STYLES[number]>('topstitch');
     const [physicsEnabled, setPhysicsEnabled] = useState(false);
+    const statusTimeoutRef = useRef<number | null>(null);
 
     const {
         width,
@@ -34,8 +35,19 @@ export default function PropertiesPanel() {
 
     const setStatus = (message: string) => {
         setStatusMessage(message);
-        window.setTimeout(() => setStatusMessage(''), 2200);
+        if (statusTimeoutRef.current !== null) {
+            window.clearTimeout(statusTimeoutRef.current);
+        }
+        statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 2200);
     };
+
+    useEffect(() => {
+        return () => {
+            if (statusTimeoutRef.current !== null) {
+                window.clearTimeout(statusTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const area = useMemo(() => (width * length).toFixed(1), [width, length]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGarmentStore, ProjectSnapshot } from '@/store/useGarmentStore';
 
 const DOWNLOAD_FILE_NAME = 'fashioncad-project.json';
@@ -9,6 +9,8 @@ export default function Header() {
     const [activeMenu, setActiveMenu] = useState<'file' | 'edit' | 'view' | 'help' | null>(null);
     const [statusMessage, setStatusMessage] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const statusTimeoutRef = useRef<number | null>(null);
 
     const {
         setViewMode,
@@ -21,9 +23,59 @@ export default function Header() {
         setActiveTool,
     } = useGarmentStore();
 
+
+    useEffect(() => {
+        return () => {
+            if (statusTimeoutRef.current !== null) {
+                window.clearTimeout(statusTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        const onMouseDown = (event: MouseEvent) => {
+            if (!menuRef.current) return;
+            if (!menuRef.current.contains(event.target as Node)) {
+                setActiveMenu(null);
+            }
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setActiveMenu(null);
+            }
+        };
+
+        document.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('keydown', onKeyDown);
+
+        return () => {
+            document.removeEventListener('mousedown', onMouseDown);
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, []);
+
     const setStatus = (message: string) => {
         setStatusMessage(message);
-        window.setTimeout(() => setStatusMessage(''), 2500);
+        if (statusTimeoutRef.current !== null) {
+            window.clearTimeout(statusTimeoutRef.current);
+        }
+        statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 2500);
+    };
+
+
+    const downloadProjectSnapshot = () => {
+        const project = getProjectSnapshot();
+        const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = DOWNLOAD_FILE_NAME;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        setStatus('프로젝트 파일이 저장되었습니다.');
     };
 
     const menuItems = useMemo(() => ([
@@ -40,19 +92,7 @@ export default function Header() {
                 },
                 {
                     label: 'Save (Download JSON)',
-                    action: () => {
-                        const project = getProjectSnapshot();
-                        const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-                        const url = URL.createObjectURL(blob);
-                        const anchor = document.createElement('a');
-                        anchor.href = url;
-                        anchor.download = DOWNLOAD_FILE_NAME;
-                        document.body.appendChild(anchor);
-                        anchor.click();
-                        anchor.remove();
-                        URL.revokeObjectURL(url);
-                        setStatus('프로젝트 파일이 저장되었습니다.');
-                    },
+                    action: downloadProjectSnapshot,
                 },
                 {
                     label: 'Open (Load JSON)',
@@ -103,7 +143,7 @@ export default function Header() {
                 },
             ],
         },
-    ]), [clearProject, getProjectSnapshot, redo, setActiveTool, setViewMode, undo]);
+    ]), [clearProject, downloadProjectSnapshot, redo, setActiveTool, setViewMode, undo]);
 
     const handleMenuAction = (action: () => void) => {
         action();
@@ -136,7 +176,7 @@ export default function Header() {
             </div>
 
             <div className="flex flex-1 justify-end gap-6 items-center">
-                <nav className="hidden md:flex items-center gap-4 relative">
+                <nav ref={menuRef} className="hidden md:flex items-center gap-4 relative">
                     {menuItems.map((menu) => (
                         <div key={menu.key} className="relative">
                             <button
@@ -180,19 +220,7 @@ export default function Header() {
                     </button>
                     <button
                         type="button"
-                        onClick={() => {
-                            const project = getProjectSnapshot();
-                            const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            const anchor = document.createElement('a');
-                            anchor.href = url;
-                            anchor.download = DOWNLOAD_FILE_NAME;
-                            document.body.appendChild(anchor);
-                            anchor.click();
-                            anchor.remove();
-                            URL.revokeObjectURL(url);
-                            setStatus('프로젝트 파일이 저장되었습니다.');
-                        }}
+                        onClick={downloadProjectSnapshot}
                         className="flex cursor-pointer items-center justify-center overflow-hidden rounded h-9 px-4 bg-border-dark hover:bg-slate-600 text-white text-sm font-bold leading-normal transition-colors"
                     >
                         <span className="truncate">Save</span>
