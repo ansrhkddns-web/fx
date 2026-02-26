@@ -199,13 +199,23 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
       .map((entry) => ({ shapes: cloneShapes(entry.shapes) }));
 
     const boundedHistory = sanitizedHistory.slice(-MAX_HISTORY_ENTRIES);
-    const normalizedHistoryIndex = boundedHistory.length === 0
+
+    const fallbackHistory = sanitizedShapes.length > 0
+      ? [{ shapes: cloneShapes(sanitizedShapes) }]
+      : [];
+
+    const effectiveHistory = boundedHistory.length > 0 ? boundedHistory : fallbackHistory;
+    const normalizedHistoryIndex = effectiveHistory.length === 0
       ? -1
-      : Math.min(Math.max(project.historyIndex, 0), boundedHistory.length - 1);
+      : Math.min(Math.max(project.historyIndex, 0), effectiveHistory.length - 1);
+
+    const nextShapes = normalizedHistoryIndex >= 0
+      ? cloneShapes(effectiveHistory[normalizedHistoryIndex].shapes)
+      : cloneShapes(sanitizedShapes);
 
     set({
-      shapes: sanitizedShapes,
-      history: boundedHistory,
+      shapes: nextShapes,
+      history: effectiveHistory,
       historyIndex: normalizedHistoryIndex,
       selectedShapeId: null,
       selectedVertexId: null,

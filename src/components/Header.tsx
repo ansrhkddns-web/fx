@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGarmentStore, ProjectSnapshot } from '@/store/useGarmentStore';
 
 const DOWNLOAD_FILE_NAME = 'fashioncad-project.json';
@@ -23,6 +23,23 @@ export default function Header() {
         setActiveTool,
     } = useGarmentStore();
 
+    const downloadProjectSnapshot = useCallback(() => {
+        const project = getProjectSnapshot();
+        const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = DOWNLOAD_FILE_NAME;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        setStatusMessage('프로젝트 파일이 저장되었습니다.');
+        if (statusTimeoutRef.current !== null) {
+            window.clearTimeout(statusTimeoutRef.current);
+        }
+        statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 2500);
+    }, [getProjectSnapshot]);
 
     useEffect(() => {
         return () => {
@@ -43,6 +60,22 @@ export default function Header() {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 setActiveMenu(null);
+                return;
+            }
+
+            const isMod = event.ctrlKey || event.metaKey;
+            if (!isMod) return;
+
+            const key = event.key.toLowerCase();
+            if (key === 's') {
+                event.preventDefault();
+                downloadProjectSnapshot();
+                return;
+            }
+
+            if (key === 'o') {
+                event.preventDefault();
+                fileInputRef.current?.click();
             }
         };
 
@@ -53,7 +86,7 @@ export default function Header() {
             document.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('keydown', onKeyDown);
         };
-    }, []);
+    }, [downloadProjectSnapshot]);
 
     const setStatus = (message: string) => {
         setStatusMessage(message);
@@ -62,22 +95,6 @@ export default function Header() {
         }
         statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 2500);
     };
-
-
-    const downloadProjectSnapshot = () => {
-        const project = getProjectSnapshot();
-        const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = DOWNLOAD_FILE_NAME;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-        setStatus('프로젝트 파일이 저장되었습니다.');
-    };
-
     const menuItems = useMemo(() => ([
         {
             key: 'file' as const,
