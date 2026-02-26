@@ -5,6 +5,11 @@ import { useGarmentStore, ProjectSnapshot } from '@/store/useGarmentStore';
 
 const DOWNLOAD_FILE_NAME = 'fashioncad-project.json';
 
+const isTypingTarget = (target: EventTarget | null) => {
+    const element = target as HTMLElement | null;
+    return !!element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT' || element.isContentEditable);
+};
+
 export default function Header() {
     const [activeMenu, setActiveMenu] = useState<'file' | 'edit' | 'view' | 'help' | null>(null);
     const [statusMessage, setStatusMessage] = useState<string>('');
@@ -58,6 +63,8 @@ export default function Header() {
         };
 
         const onKeyDown = (event: KeyboardEvent) => {
+            if (isTypingTarget(event.target)) return;
+
             if (event.key === 'Escape') {
                 setActiveMenu(null);
                 return;
@@ -176,6 +183,9 @@ export default function Header() {
             const parsed = JSON.parse(text) as ProjectSnapshot;
             const loaded = loadProject(parsed);
             setStatus(loaded ? '프로젝트를 불러왔습니다.' : '파일 형식이 올바르지 않습니다.');
+            if (loaded) {
+                setActiveMenu(null);
+            }
         } catch {
             setStatus('파일을 읽는 중 오류가 발생했습니다.');
         } finally {
