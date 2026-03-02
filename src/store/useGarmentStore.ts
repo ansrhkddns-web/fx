@@ -18,6 +18,37 @@ interface HistoryState {
   shapes: Shape[];
 }
 
+export interface ProjectSnapshot {
+  shapes: Shape[];
+  history: HistoryState[];
+  historyIndex: number;
+}
+
+const cloneShapes = (shapes: Shape[]) => JSON.parse(JSON.stringify(shapes)) as Shape[];
+const MAX_HISTORY_ENTRIES = 200;
+
+const shapesAreEqual = (left: Shape[], right: Shape[]) => {
+  if (left.length !== right.length) return false;
+
+  return left.every((leftShape, shapeIndex) => {
+    const rightShape = right[shapeIndex];
+    if (!rightShape) return false;
+    if (leftShape.id !== rightShape.id) return false;
+    if (leftShape.type !== rightShape.type) return false;
+    if (leftShape.isClosed !== rightShape.isClosed) return false;
+    if (leftShape.color !== rightShape.color) return false;
+    if (leftShape.points.length !== rightShape.points.length) return false;
+
+    return leftShape.points.every((leftPoint, pointIndex) => {
+      const rightPoint = rightShape.points[pointIndex];
+      return !!rightPoint
+        && leftPoint.id === rightPoint.id
+        && leftPoint.x === rightPoint.x
+        && leftPoint.y === rightPoint.y;
+    });
+  });
+};
+
 interface GarmentState {
   viewMode: "2d" | "3d" | "split";
   activeTool: string;
@@ -48,9 +79,12 @@ interface GarmentState {
   deleteShape: (id: string) => void;
   undo: () => void;
   redo: () => void;
+  clearProject: () => void;
+  loadProject: (project: ProjectSnapshot) => boolean;
 
   // Directly pushing to history
   saveHistory: () => void;
+  getProjectSnapshot: () => ProjectSnapshot;
 }
 
 export const useGarmentStore = create<GarmentState>((set, get) => ({
@@ -88,8 +122,22 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
 
   saveHistory: () => {
     const state = get();
+    const snapshot = cloneShapes(state.shapes);
+    const lastSnapshot = state.history[state.historyIndex];
+
+    if (lastSnapshot && shapesAreEqual(lastSnapshot.shapes, snapshot)) {
+      return;
+    }
+
     const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push({ shapes: JSON.parse(JSON.stringify(state.shapes)) }); // Deep clone
+    newHistory.push({ shapes: snapshot });
+
+    if (newHistory.length > MAX_HISTORY_ENTRIES) {
+      const trimmedHistory = newHistory.slice(newHistory.length - MAX_HISTORY_ENTRIES);
+      set({ history: trimmedHistory, historyIndex: trimmedHistory.length - 1 });
+      return;
+    }
+
     set({ history: newHistory, historyIndex: newHistory.length - 1 });
   },
 
@@ -114,7 +162,7 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
     const { historyIndex, history } = get();
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
-      set({ shapes: JSON.parse(JSON.stringify(history[newIndex].shapes)), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
+      set({ shapes: cloneShapes(history[newIndex].shapes), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
     } else if (historyIndex === 0) {
       // Revert to empty
       set({ shapes: [], historyIndex: -1, selectedShapeId: null, selectedVertexId: null });
@@ -125,7 +173,64 @@ export const useGarmentStore = create<GarmentState>((set, get) => ({
     const { historyIndex, history } = get();
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
-      set({ shapes: JSON.parse(JSON.stringify(history[newIndex].shapes)), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
+      set({ shapes: cloneShapes(history[newIndex].shapes), historyIndex: newIndex, selectedShapeId: null, selectedVertexId: null });
     }
+  },
+
+  clearProject: () => {
+    set({
+      shapes: [],
+      history: [],
+      historyIndex: -1,
+      selectedShapeId: null,
+      selectedVertexId: null,
+      activeTool: 'select',
+    });
+  },
+
+  loadProject: (project) => {
+    if (!project || !Array.isArray(project.shapes) || !Array.isArray(project.history) || typeof project.historyIndex !== 'number') {
+      return false;
+    }
+
+    const sanitizedShapes = cloneShapes(project.shapes);
+    const sanitizedHistory = project.history
+      .filter((entry) => entry && Array.isArray(entry.shapes))
+      .map((entry) => ({ shapes: cloneShapes(entry.shapes) }));
+
+    const boundedHistory = sanitizedHistory.slice(-MAX_HISTORY_ENTRIES);
+
+    const fallbackHistory = sanitizedShapes.length > 0
+      ? [{ shapes: cloneShapes(sanitizedShapes) }]
+      : [];
+
+    const effectiveHistory = boundedHistory.length > 0 ? boundedHistory : fallbackHistory;
+    const normalizedHistoryIndex = effectiveHistory.length === 0
+      ? -1
+      : Math.min(Math.max(project.historyIndex, 0), effectiveHistory.length - 1);
+
+    const nextShapes = normalizedHistoryIndex >= 0
+      ? cloneShapes(effectiveHistory[normalizedHistoryIndex].shapes)
+      : cloneShapes(sanitizedShapes);
+
+    set({
+      shapes: nextShapes,
+      history: effectiveHistory,
+      historyIndex: normalizedHistoryIndex,
+      selectedShapeId: null,
+      selectedVertexId: null,
+      activeTool: 'select',
+    });
+
+    return true;
+  },
+
+  getProjectSnapshot: () => {
+    const { shapes, history, historyIndex } = get();
+    return {
+      shapes: cloneShapes(shapes),
+      history: history.map((entry) => ({ shapes: cloneShapes(entry.shapes) })),
+      historyIndex,
+    };
   }
 }));

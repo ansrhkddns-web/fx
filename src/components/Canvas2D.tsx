@@ -1,29 +1,212 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 import { useGarmentStore, PatternPoint, Shape } from "@/store/useGarmentStore";
 import { v4 as uuidv4 } from "uuid";
 
 // Constants
 const GRID_SIZE = 20;
+const CLOSE_SNAP_RADIUS = 15;
 
 const snapToGrid = (val: number) => Math.round(val / GRID_SIZE) * GRID_SIZE;
+
+const isTypingTarget = (target: EventTarget | null) => {
+    const element = target as HTMLElement | null;
+    return !!element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT' || element.isContentEditable);
+};
+
+type DragStartMap = Record<string, { x: number; y: number }>;
 
 export default function Canvas2D() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
+    const dragStartRef = useRef<DragStartMap>({});
 
     const {
         activeTool,
         selectedVertexId, setSelectedVertexId,
         selectedShapeId, setSelectedShapeId,
-        shapes, addShape, updateShape, saveHistory
+        shapes, addShape, updateShape, saveHistory, deleteShape, undo, redo
     } = useGarmentStore();
 
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [drawingPoints, setDrawingPoints] = useState<PatternPoint[]>([]);
+    const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
+    const [isClosePreview, setIsClosePreview] = useState(false);
+
+    const drawingPointsRef = useRef(drawingPoints);
+    const shapesRef = useRef(shapes);
+    const updateShapeRef = useRef(updateShape);
+    const saveHistoryRef = useRef(saveHistory);
+
+    useEffect(() => {
+        drawingPointsRef.current = drawingPoints;
+        shapesRef.current = shapes;
+        updateShapeRef.current = updateShape;
+        saveHistoryRef.current = saveHistory;
+    }, [drawingPoints, shapes, updateShape, saveHistory]);
+
+    const pushDrawingPoint = useCallback((point: PatternPoint) => {
+        setDrawingPoints((prevPoints) => {
+            const nextPoints = [...prevPoints, point];
+            drawingPointsRef.current = nextPoints;
+            return nextPoints;
+        });
+    }, []);
+
+    const popDrawingPoint = useCallback(() => {
+        setDrawingPoints((prevPoints) => {
+            const nextPoints = prevPoints.slice(0, -1);
+            drawingPointsRef.current = nextPoints;
+            return nextPoints;
+        });
+    }, []);
+
+    const clearDrawingPoints = useCallback(() => {
+        drawingPointsRef.current = [];
+        setDrawingPoints([]);
+        setIsClosePreview(false);
+    }, []);
+
+    const clearSelection = useCallback((clearEditMode: boolean = true) => {
+        if (clearEditMode) {
+            setEditingShapeId(null);
+        }
+        setSelectedShapeId(null);
+        setSelectedVertexId(null);
+    }, [setSelectedShapeId, setSelectedVertexId]);
+
+    const isSelectTool = activeTool === 'select';
+    const isEditTool = activeTool === 'cut';
+    const canInspectShapes = isSelectTool || isEditTool;
+
+    const activeToolRef = useRef(activeTool);
+    const canInspectShapesRef = useRef(canInspectShapes);
+    const selectedShapeIdRef = useRef(selectedShapeId);
+    const editingShapeIdRef = useRef(editingShapeId);
+
+    useEffect(() => {
+        activeToolRef.current = activeTool;
+        canInspectShapesRef.current = canInspectShapes;
+        selectedShapeIdRef.current = selectedShapeId;
+        editingShapeIdRef.current = editingShapeId;
+    }, [activeTool, canInspectShapes, selectedShapeId, editingShapeId]);
+
+    const closeDrawingShape = useCallback(() => {
+        const points = drawingPointsRef.current;
+        if (points.length < 3) return false;
+
+        const newShape: Shape = {
+            id: uuidv4(),
+            type: 'polygon',
+            points: [...points],
+            isClosed: true,
+            color: '#1e2936',
+        };
+
+        addShape(newShape);
+        clearDrawingPoints();
+        return true;
+    }, [addShape, clearDrawingPoints]);
+
+    useEffect(() => {
+        if (!canInspectShapes) {
+            clearSelection();
+        }
+    }, [canInspectShapes, clearSelection]);
+
+    useEffect(() => {
+        if (activeTool !== 'pen' && drawingPointsRef.current.length > 0) {
+            clearDrawingPoints();
+        }
+    }, [activeTool, clearDrawingPoints]);
+
+    useEffect(() => {
+        if (selectedShapeId && !shapes.some((shape) => shape.id === selectedShapeId)) {
+            clearSelection(false);
+        }
+
+        if (editingShapeId && !shapes.some((shape) => shape.id === editingShapeId)) {
+            setEditingShapeId(null);
+            setSelectedVertexId(null);
+        }
+    }, [shapes, selectedShapeId, editingShapeId, clearSelection, setSelectedVertexId]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (isTypingTarget(event.target)) return;
+
+            const key = event.key;
+            const activeToolValue = activeToolRef.current;
+            const editingShapeIdValue = editingShapeIdRef.current;
+            const selectedShapeIdValue = selectedShapeIdRef.current;
+            const canInspectShapesValue = canInspectShapesRef.current;
+            const isUndo = (event.ctrlKey || event.metaKey) && key.toLowerCase() === 'z' && !event.shiftKey;
+            const isRedo = (event.ctrlKey || event.metaKey) && (key.toLowerCase() === 'y' || (key.toLowerCase() === 'z' && event.shiftKey));
+
+            if (isUndo) {
+                undo();
+                event.preventDefault();
+                return;
+            }
+
+            if (isRedo) {
+                redo();
+                event.preventDefault();
+                return;
+            }
+
+            if (key === 'Escape') {
+                if (activeToolValue === 'pen' && drawingPointsRef.current.length > 0) {
+                    clearDrawingPoints();
+                    event.preventDefault();
+                    return;
+                }
+
+                if (editingShapeIdValue) {
+                    setEditingShapeId(null);
+                    setSelectedVertexId(null);
+                    return;
+                }
+
+                clearSelection();
+                return;
+            }
+
+            if (activeToolValue === 'pen' && key === 'Enter') {
+                if (closeDrawingShape()) {
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            if (activeToolValue === 'pen' && key === 'Backspace' && drawingPointsRef.current.length > 0) {
+                popDrawingPoint();
+                event.preventDefault();
+                return;
+            }
+
+            if ((key === 'Delete' || key === 'Backspace') && canInspectShapesValue && selectedShapeIdValue) {
+                deleteShape(selectedShapeIdValue);
+                clearSelection();
+                event.preventDefault();
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [
+        clearDrawingPoints,
+        clearSelection,
+        closeDrawingShape,
+        deleteShape,
+        popDrawingPoint,
+        redo,
+        setSelectedVertexId,
+        undo,
+    ]);
 
     // Initialize Canvas
     useEffect(() => {
@@ -58,8 +241,12 @@ export default function Canvas2D() {
         const canvas = fabricRef.current;
         if (!canvas) return;
 
-        canvas.selection = activeTool === 'select';
-        canvas.defaultCursor = activeTool === 'pen' ? 'crosshair' : 'default';
+        canvas.selection = isSelectTool;
+        canvas.defaultCursor = activeTool === 'pen' ? 'crosshair' : (isEditTool ? 'cell' : 'default');
+
+        if (!isSelectTool) {
+            dragStartRef.current = {};
+        }
 
         // Clear event listeners before re-attaching
         canvas.off('mouse:down');
@@ -75,50 +262,74 @@ export default function Canvas2D() {
                 const y = snapToGrid(pointer.y);
 
                 // Check if clicked near the first point to close shape
-                if (drawingPoints.length > 2) {
-                    const firstPt = drawingPoints[0];
+                if (drawingPointsRef.current.length > 2) {
+                    const firstPt = drawingPointsRef.current[0];
                     const dist = Math.sqrt(Math.pow(firstPt.x - x, 2) + Math.pow(firstPt.y - y, 2));
-                    if (dist < 15) {
-                        // Close shape
-                        const newShape: Shape = {
-                            id: uuidv4(),
-                            type: 'polygon',
-                            points: [...drawingPoints],
-                            isClosed: true,
-                            color: '#1e2936'
-                        };
-                        addShape(newShape);
-                        setDrawingPoints([]);
-                        canvas.renderAll();
-                        return;
+                    if (dist < CLOSE_SNAP_RADIUS) {
+                        if (closeDrawingShape()) {
+                            canvas.renderAll();
+                            return;
+                        }
                     }
                 }
 
                 const newPoint: PatternPoint = { id: uuidv4(), x, y };
-                setDrawingPoints([...drawingPoints, newPoint]);
+                pushDrawingPoint(newPoint);
             });
 
             canvas.on('mouse:move', (e) => {
                 const pointer = canvas.getPointer(e.e);
-                setMousePos({ x: snapToGrid(pointer.x), y: snapToGrid(pointer.y) });
+                const snappedX = snapToGrid(pointer.x);
+                const snappedY = snapToGrid(pointer.y);
+                setMousePos({ x: snappedX, y: snappedY });
+
+                if (drawingPointsRef.current.length > 2) {
+                    const firstPoint = drawingPointsRef.current[0];
+                    const distanceToStart = Math.sqrt(Math.pow(firstPoint.x - snappedX, 2) + Math.pow(firstPoint.y - snappedY, 2));
+                    setIsClosePreview(distanceToStart < CLOSE_SNAP_RADIUS);
+                } else {
+                    setIsClosePreview(false);
+                }
+
                 canvas.renderAll();
             });
 
-        } else if (activeTool === 'select') {
+        } else if (canInspectShapes) {
             canvas.on('object:modified', (e) => {
-                const obj = e.target as any;
-                if (obj && obj.shapeId) {
-                    // Main polygon modified
-                    if (obj.type === 'polygon') {
-                        // Update points based on translation
-                        // Real CAD needs deep parsing of matrix, but we simplify by recreating or just updating `left`/`top` in state if supported.
-                        // For now, save history
-                        saveHistory();
+                if (!isSelectTool) return;
+
+                const obj = e.target as fabric.Polygon & { shapeId?: string };
+                const shapeId = obj?.shapeId;
+                if (!obj || obj.type !== 'polygon' || !shapeId) return;
+
+                const dragStart = dragStartRef.current[shapeId];
+                if (!dragStart) {
+                    delete dragStartRef.current[shapeId];
+                    return;
+                }
+
+                const deltaX = snapToGrid((obj.left || 0) - dragStart.x);
+                const deltaY = snapToGrid((obj.top || 0) - dragStart.y);
+
+                if (deltaX !== 0 || deltaY !== 0) {
+                    const movedShape = shapesRef.current.find((shape) => shape.id === shapeId);
+                    if (movedShape) {
+                        const shiftedPoints = movedShape.points.map((point) => ({
+                            ...point,
+                            x: point.x + deltaX,
+                            y: point.y + deltaY,
+                        }));
+                        updateShapeRef.current(movedShape.id, { points: shiftedPoints });
+                        saveHistoryRef.current();
                     }
                 }
+
+                delete dragStartRef.current[shapeId];
             });
 
             canvas.on('object:moving', (e) => {
+                if (!isSelectTool) return;
+
                 const obj = e.target;
                 if (obj) {
                     obj.left = snapToGrid(obj.left || 0);
@@ -128,13 +339,13 @@ export default function Canvas2D() {
 
             canvas.on('mouse:down', (e) => {
                 if (!e.target) {
-                    setSelectedShapeId(null);
-                    setSelectedVertexId(null);
+                    dragStartRef.current = {};
+                    clearSelection();
                 }
             });
         }
 
-    }, [activeTool, drawingPoints, mousePos, addShape, setSelectedShapeId, setSelectedVertexId, saveHistory]);
+    }, [activeTool, isSelectTool, isEditTool, canInspectShapes, addShape, closeDrawingShape, pushDrawingPoint, clearSelection, setSelectedShapeId, setSelectedVertexId]);
 
     // Render shapes from state + drawing preview
     useEffect(() => {
@@ -151,61 +362,48 @@ export default function Canvas2D() {
                 stroke: '#308ce8',
                 strokeWidth: selectedShapeId === shape.id ? 3 : 2,
                 opacity: 0.9,
-                selectable: activeTool === 'select',
-                evented: activeTool === 'select',
+                selectable: canInspectShapes,
+                evented: canInspectShapes,
                 hasControls: false,
-                hasBorders: activeTool === 'select',
+                hasBorders: canInspectShapes,
+                lockMovementX: isEditTool,
+                lockMovementY: isEditTool,
             });
 
-            (poly as any).shapeId = shape.id;
+            const polygonWithMeta = poly as fabric.Polygon & { shapeId?: string };
+            polygonWithMeta.shapeId = shape.id;
 
             poly.on('mousedown', () => {
-                if (activeTool === 'select') {
+                if (!canInspectShapes) return;
+
+                if (isSelectTool) {
+                    dragStartRef.current[shape.id] = { x: poly.left || 0, y: poly.top || 0 };
+                }
+
+                if (selectedShapeId !== shape.id) {
+                    setSelectedVertexId(null);
+                }
+
+                setSelectedShapeId(shape.id);
+
+                if (isEditTool) {
+                    setEditingShapeId(shape.id);
+                } else if (!isSelectTool) {
+                    setEditingShapeId(null);
+                }
+            });
+
+            poly.on('mousedblclick', () => {
+                if (isSelectTool) {
                     setSelectedShapeId(shape.id);
+                    setEditingShapeId(shape.id);
                 }
             });
 
             canvas.add(poly);
 
-            // Render controls for editing vertices if selected
-            if (selectedShapeId === shape.id && activeTool === 'select') {
-                shape.points.forEach((pt, idx) => {
-                    const circle = new fabric.Circle({
-                        radius: 5,
-                        fill: selectedVertexId === pt.id ? '#ef4444' : '#ffffff',
-                        stroke: '#308ce8',
-                        strokeWidth: 2,
-                        left: pt.x,
-                        top: pt.y,
-                        originX: 'center',
-                        originY: 'center',
-                        hasControls: false,
-                        hasBorders: false,
-                    });
-
-                    circle.on('mousedown', () => {
-                        setSelectedVertexId(pt.id);
-                    });
-
-                    circle.on('moving', (e) => {
-                        const cbX = snapToGrid(circle.left || 0);
-                        const cbY = snapToGrid(circle.top || 0);
-                        circle.set({ left: cbX, top: cbY });
-
-                        // Update shape state real-time
-                        const newPts = [...shape.points];
-                        newPts[idx] = { ...newPts[idx], x: cbX, y: cbY };
-                        updateShape(shape.id, { points: newPts });
-                    });
-
-                    circle.on('modified', () => {
-                        saveHistory();
-                    });
-
-                    canvas.add(circle);
-                });
-
-                // Render Measurements (Distance between consecutive points)
+            // Render Measurements (Distance between consecutive points)
+            if (shape.isClosed) {
                 for (let i = 0; i < shape.points.length; i++) {
                     const p1 = shape.points[i];
                     const p2 = shape.points[(i + 1) % shape.points.length];
@@ -230,6 +428,45 @@ export default function Canvas2D() {
                     canvas.add(text);
                 }
             }
+
+            // Render controls for editing vertices only in edit mode
+            if (selectedShapeId === shape.id && editingShapeId === shape.id && canInspectShapes) {
+                shape.points.forEach((pt, idx) => {
+                    const circle = new fabric.Circle({
+                        radius: 5,
+                        fill: selectedVertexId === pt.id ? '#ef4444' : '#ffffff',
+                        stroke: '#308ce8',
+                        strokeWidth: 2,
+                        left: pt.x,
+                        top: pt.y,
+                        originX: 'center',
+                        originY: 'center',
+                        hasControls: false,
+                        hasBorders: false,
+                    });
+
+                    circle.on('mousedown', () => {
+                        setSelectedVertexId(pt.id);
+                    });
+
+                    circle.on('moving', () => {
+                        const cbX = snapToGrid(circle.left || 0);
+                        const cbY = snapToGrid(circle.top || 0);
+                        circle.set({ left: cbX, top: cbY });
+
+                        // Update shape state real-time
+                        const newPts = [...shape.points];
+                        newPts[idx] = { ...newPts[idx], x: cbX, y: cbY };
+                        updateShape(shape.id, { points: newPts });
+                    });
+
+                    circle.on('modified', () => {
+                        saveHistory();
+                    });
+
+                    canvas.add(circle);
+                });
+            }
         });
 
         // 2. Render Drawing Preview
@@ -250,6 +487,23 @@ export default function Canvas2D() {
             );
             canvas.add(guideLine);
 
+            if (isClosePreview && drawingPoints.length > 2) {
+                const firstPt = drawingPoints[0];
+                const closeHalo = new fabric.Circle({
+                    radius: 10,
+                    left: firstPt.x,
+                    top: firstPt.y,
+                    originX: 'center',
+                    originY: 'center',
+                    fill: 'rgba(48, 140, 232, 0.2)',
+                    stroke: '#60a5fa',
+                    strokeWidth: 2,
+                    selectable: false,
+                    evented: false,
+                });
+                canvas.add(closeHalo);
+            }
+
             // Draw nodes
             drawingPoints.forEach(pt => {
                 const circle = new fabric.Circle({
@@ -259,7 +513,7 @@ export default function Canvas2D() {
             });
         }
 
-    }, [shapes, activeTool, drawingPoints, mousePos, selectedShapeId, selectedVertexId, updateShape, setSelectedShapeId, setSelectedVertexId, saveHistory]);
+    }, [shapes, activeTool, drawingPoints, mousePos, selectedShapeId, selectedVertexId, editingShapeId, isClosePreview, updateShape, setSelectedShapeId, setSelectedVertexId, saveHistory]);
 
 
     // Helper to find selected vertex specifically
@@ -270,7 +524,26 @@ export default function Canvas2D() {
         return shape.points.find(p => p.id === selectedVertexId) || null;
     };
 
-    const selVertex = getSelectedVertexObj();
+    const selVertex = editingShapeId === selectedShapeId ? getSelectedVertexObj() : null;
+
+    const updateSelectedVertexAxis = (axis: 'x' | 'y', value: number) => {
+        if (!selectedShapeId || !selVertex || Number.isNaN(value)) return;
+
+        const shape = shapes.find((item) => item.id === selectedShapeId);
+        if (!shape) return;
+
+        const snapped = snapToGrid(value);
+        const newPoints = shape.points.map((point) => point.id === selVertex.id ? { ...point, [axis]: snapped } : point);
+        updateShape(shape.id, { points: newPoints });
+    };
+
+    const modeHint = isEditTool
+        ? 'Edit Pattern: click shape to edit vertices · Esc to exit'
+        : isSelectTool
+            ? 'Select: drag shape · double-click edit · Ctrl/Cmd+Z undo · Delete remove · Esc clear'
+            : activeTool === 'pen'
+                ? 'Pen: click to add points · Enter close · Backspace undo · Esc cancel'
+                : null;
 
     return (
         <div ref={containerRef} className="w-full h-full relative">
@@ -289,6 +562,40 @@ export default function Canvas2D() {
                 <span className="flex-1 border-t border-text-secondary/20 pt-1">20</span>
                 <span className="flex-1 border-t border-text-secondary/20 pt-1">30</span>
             </div>
+
+            {modeHint && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-surface-dark/90 border border-border-dark rounded px-3 py-1.5 text-[11px] text-slate-300 pointer-events-none">
+                    {modeHint}
+                </div>
+            )}
+
+            {activeTool === 'pen' && drawingPoints.length > 0 && (
+                <div className="absolute top-12 left-8 z-20 bg-surface-dark/90 border border-border-dark rounded px-2 py-1 text-[11px] text-slate-300 pointer-events-none">
+                    In-progress points: {drawingPoints.length}
+                </div>
+            )}
+
+            {activeTool === 'pen' && isClosePreview && (
+                <div className="absolute top-20 left-8 z-20 bg-primary/20 border border-primary/60 rounded px-2 py-1 text-[11px] text-primary pointer-events-none">
+                    Click to close shape
+                </div>
+            )}
+
+            {editingShapeId && (
+                <div className="absolute top-12 right-4 z-20 bg-surface-dark/90 border border-border-dark rounded px-3 py-2 text-xs text-slate-200 flex items-center gap-2">
+                    <span>Editing Pattern</span>
+                    <button
+                        type="button"
+                        className="text-primary hover:text-white transition-colors"
+                        onClick={() => {
+                            setEditingShapeId(null);
+                            setSelectedVertexId(null);
+                        }}
+                    >
+                        Exit (Esc)
+                    </button>
+                </div>
+            )}
 
             {/* Floating Control overlay for selected vertex */}
             {selVertex && (
@@ -313,11 +620,9 @@ export default function Canvas2D() {
                                 type="number"
                                 value={selVertex.x}
                                 onChange={(e) => {
-                                    const newX = Number(e.target.value);
-                                    const shape = shapes.find(s => s.id === selectedShapeId)!;
-                                    const newPts = shape.points.map(p => p.id === selVertex.id ? { ...p, x: newX } : p);
-                                    updateShape(shape.id, { points: newPts });
+                                    updateSelectedVertexAxis('x', Number(e.target.value));
                                 }}
+                                onBlur={saveHistory}
                             />
                         </div>
                         <div className="flex flex-col gap-1">
@@ -327,11 +632,9 @@ export default function Canvas2D() {
                                 type="number"
                                 value={selVertex.y}
                                 onChange={(e) => {
-                                    const newY = Number(e.target.value);
-                                    const shape = shapes.find(s => s.id === selectedShapeId)!;
-                                    const newPts = shape.points.map(p => p.id === selVertex.id ? { ...p, y: newY } : p);
-                                    updateShape(shape.id, { points: newPts });
+                                    updateSelectedVertexAxis('y', Number(e.target.value));
                                 }}
+                                onBlur={saveHistory}
                             />
                         </div>
                     </div>
